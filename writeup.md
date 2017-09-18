@@ -164,7 +164,7 @@ Here's a [link](./project_video_processed.mp4) to my video result.
 
 Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
 
-According to my experiemnts with the threshold techniques in a test image, the HLS threshold in the S channel showed clear output for distinct line segments. So I decided to use the HLS (S channel) as one major feature to determine lanes. But the HLS threshold often missed small line segments that can be captured by gradient or magnitude threshold methods. Therefore, I combined those features with the HLS to detect lanes.
+According to my experiemnts with the threshold techniques in a test image, the HLS threshold in the S channel showed clear output for distinct line segments. So I decided to use the HLS (S channel) as one major feature to determine lanes. But the HLS threshold often missed small line segments that can be captured by gradient or magnitude threshold methods. This led me to combine those features with the HLS to detect lanes.
 
 To make my lane detection more robust, sanity checks will be implemented if time allows.
 
