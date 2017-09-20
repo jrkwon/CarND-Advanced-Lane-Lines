@@ -15,9 +15,8 @@ import pickle
 
 folder_output_images = './output_images/'
 folder_test_images = './test_images/'
-test_image_name = 'test3'
+test_image_name = 'test8' #'test4'
 folder_camera_cal = './camera_cal/'
-img_size = (1280, 720)
 
 project_video_filename = 'project_video.mp4'
 
@@ -27,6 +26,9 @@ def_figsize = (20, 40)
 # camera calibration
 g_mtx = None
 g_dist = None
+
+# minimum_radius of curvature
+min_rad_curv = 180 # meters
 
 ##############################################################################
 # LINE CLASS TO STORE DATA
@@ -231,7 +233,22 @@ def hls_thresh(img, thresh=(0, 255)):
     #binary_output = np.copy(img) # placeholder line
     return binary_output
 
-    
+def select_yellow(image):
+	#hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+	hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+	lower = np.array([20,100,100]) #[20,60,60])
+	upper = np.array([30,255,255]) #38,174, 250])
+	binary_output = cv2.inRange(hsv, lower, upper)
+
+	return binary_output
+
+def select_white(image):
+	lower = np.array([202,202,202])
+	upper = np.array([255,255,255])
+	binary_output = cv2.inRange(image, lower, upper)
+
+	return binary_output    
+
 ##############################################################################
 # PIPELINE
 ##############################################################################
@@ -249,14 +266,28 @@ def pipeline(image):
     
     # Apply each of the thresholding functions
     gradx = abs_sobel_thresh(image, orient='x', sobel_kernel=ksize, thresh=sobel_thresh_value)
-    grady = abs_sobel_thresh(image, orient='y', sobel_kernel=ksize, thresh=sobel_thresh_value)
-    mag_binary = mag_thresh(image, sobel_kernel=ksize, thresh=mag_thresh_value)
+#    grady = abs_sobel_thresh(image, orient='y', sobel_kernel=ksize, thresh=sobel_thresh_value)
+#    mag_binary = mag_thresh(image, sobel_kernel=ksize, thresh=mag_thresh_value)
     dir_binary = dir_thresh(image, sobel_kernel=ksize, thresh=dir_thresh_value)
     
     hls_binary = hls_thresh(image, hls_thresh_value)
     
-    combined = np.zeros_like(gradx)
-    combined[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1)) | (hls_binary == 1)] = 1
+    white = select_white(image)
+    yellow = select_white(image)
+    
+    combined = np.zeros_like(hls_binary)
+#    combined[((gradx == 1) & (grady == 1)) 
+#                | ((mag_binary == 1) & (dir_binary == 1)) 
+#                | (hls_binary == 1)
+#                | (white == 1) 
+#                | (yellow == 1)] = 1
+    
+    combined[#((gradx == 1) & (grady == 1)) 
+#            (mag_binary == 1)  
+                (gradx == 1)
+                | ((hls_binary == 1) & (dir_binary == 1))
+                | (white == 1) 
+                | (yellow == 1)] = 1
     return combined
         
 
@@ -274,21 +305,29 @@ def warper(img, src, dst):
 
     return warped
 
+def get_warp_dst_coord(img_size):
+    dst = np.float32(
+        [[(img_size[0] / 4), 0],
+        [(img_size[0] / 4), img_size[1]],
+        [(img_size[0] * 3 / 4), img_size[1]],
+        [(img_size[0] * 3 / 4), 0]])
+        
+    return dst
+
 def get_src_dst_for_transform(img):
+    
     h, w = img.shape[:2]
     img_size = (w, h)
     
     src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
+#        [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
+        [[(img_size[0] / 2) - 50, img_size[1] / 2 + 90],
+        [((img_size[0] / 6) - 10), img_size[1]],
+        [(img_size[0] * 5 / 6) + 60, img_size[1]],
+#        [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
+        [(img_size[0] / 2 + 50), img_size[1] / 2 + 90]])
     
-    dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
+    dst = get_warp_dst_coord(img_size)
 
     return src, dst
     
@@ -385,7 +424,16 @@ def sliding_window(binary_warped, plot=True):
     out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
     out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
     
+    # Check sanity of detected lanes
+    # if the distance between left and right is too far, ignore the detection
+    found = True
+    dst = get_warp_dst_coord((binary_warped.shape[1], binary_warped.shape[0]))
+    max_dist = (dst[2][0] - dst[1][0]) + margin*2
+    if ((rightx[-1] - leftx[-1]) > max_dist):
+        found = False
+
     if plot:
+        img_size = (out_img.shape[1], out_img.shape[0])
         plt.figure(figsize=def_figsize) # open a new window
         plt.imshow(out_img)
         plt.plot(left_fitx, ploty, color='yellow')
@@ -393,7 +441,7 @@ def sliding_window(binary_warped, plot=True):
         plt.xlim(0, img_size[0])
         plt.ylim(img_size[1], 0)
 
-    return out_img, left_fit, right_fit
+    return out_img, left_fit, right_fit, found
 
 def find_lines(binary_warped, left_fit, right_fit, plot=True):
     # Assume you now have a new warped binary image 
@@ -449,6 +497,7 @@ def find_lines(binary_warped, left_fit, right_fit, plot=True):
     result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
 
     if plot:
+        img_size = (out_img.shape[1], out_img.shape[0])
         plt.figure(figsize=def_figsize) # open a new window
         plt.imshow(result)
         plt.plot(left_fitx, ploty, color='yellow')
@@ -534,20 +583,20 @@ def draw_lanes(image, binary_warped, left_fit, right_fit):
     return result
 
 def draw_lanes_info(image, left_curv, right_curv, dist_center, plot=True):
-    avg_curv = (left_curv + right_curv)/2
+    #avg_curv = (left_curv + right_curv)/2
     direction = 'left' if dist_center < 0 else 'right'
     
     font = cv2.FONT_HERSHEY_SIMPLEX
     bottomLeftCornerOfText = (20, 50)
-    fontScale = 1.5
+    fontScale = 1
     fontColor = (255,255,255) # white
     lineType = 2 #cv2.LINE_AA
 
-    text = 'Radius of Curvature = {}(m)'.format(int(avg_curv))
+    text = 'Radii of Left and Right Curvature = {}, {} (m)'.format(int(left_curv), int(right_curv))
     cv2.putText(image, text, bottomLeftCornerOfText, font, fontScale, 
                 fontColor, lineType)
     
-    bottomLeftCornerOfText = (20, 100)
+    bottomLeftCornerOfText = (20, 80)
     text = 'Vehicle is {:.2f}m '.format(abs(dist_center))+direction+' of center'
     cv2.putText(image, text, bottomLeftCornerOfText, font, fontScale, 
                 fontColor, lineType)
@@ -611,21 +660,63 @@ def process_image(img):
     if left_line.detected and right_line.detected:
         rgb, left_fit, right_fit = find_lines(processed, left_line.best_fit, right_line.best_fit, plot=False)
         #save_image(test_image_name+' Find lines from prev left and right', rgb, gray=False)    
-    else:        
-        rgb, left_fit, right_fit = sliding_window(processed, plot=False)
-        #save_image(test_image_name+' Sliding Window', rgb, gray=False)    
+
         left_line.best_fit = left_fit
         right_line.best_fit = right_fit
-        left_line.detected = True
-        right_line.detected = True
+    else:        
+        rgb, left_fit, right_fit, found = sliding_window(processed, plot=False)
+        if found == False: # failed to find proper left and right lanes
+            left_fit = left_line.best_fit #if left_line.best_fit != None else [0,0,0]
+            right_fit = right_line.best_fit #if right_line.best_fit != None else [0,0,0]
+            #save_image(test_image_name+' Sliding Window', rgb, gray=False)    
+            left_line.detected = False
+            right_line.detected = False
+        else:
+            #save_image(test_image_name+' Sliding Window', rgb, gray=False)    
+            left_line.detected = True
+            right_line.detected = True
+
+            left_line.best_fit = left_fit
+            right_line.best_fit = right_fit
     
     left_curv, right_curv, dist_center = get_curvature(processed, left_fit, right_fit)
+    # note that the radius of cuvature values here are metrics.
+    # curvature sanity check 
+    # 1. too sharp turn
+    if ((left_curv < min_rad_curv) or (right_curv < min_rad_curv)):
+        left_line.detected = False
+        right_line.detected = False
+        # use the prev ones to draw lanes
+        if (left_line.radius_of_curvature != None):
+            left_curv = left_line.radius_of_curvature
+            left_fit = left_line.best_fit
+        else:
+            left_curv = min_rad_curv
+            left_fit = left_line.best_fit
+            
+        if (left_line.radius_of_curvature != None):
+            right_curv = right_line.radius_of_curvature
+            right_fit = right_line.best_fit
+        else:
+            right_curv = min_rad_curv
+            right_fit = right_line.best_fit
+
+    # curvature sanity check
+    # 2. two detected lanes are not parallel
+    #    one line is too much curvy compared to the other
+    if left_curv < 1000 and right_curv < 1000:
+        if abs(left_curv - right_curv) > 200:
+            left_line.detected = False
+            right_line.detected = False
+            if left_curv > right_curv:
+                right_curv = left_curv
+                right_fit = right_line.best_fit
+            else:
+                left_curv = right_curv
+                left_fit = left_line.best_fit
+    
     left_line.radius_of_curvature = left_curv
     right_line.radius_of_curvature = right_curv
-    if (dist_center > 0):
-        left_line.line_base_pos = -dist_center
-    else:
-        right_line.line_base_pos = dist_center
     
     img_lanes = draw_lanes(image, processed, left_fit, right_fit)
     img_out = draw_lanes_info(img_lanes, left_curv, right_curv, dist_center, plot=False)
@@ -638,7 +729,8 @@ from moviepy.editor import VideoFileClip
 def process_video(src_file_path):
     base = os.path.basename(src_file_path)
     dst_file_path = os.path.splitext(base)[0] + '_processed.mp4'
-    src_movie = VideoFileClip(src_file_path)
+    src_movie = VideoFileClip(src_file_path, audio=False)
+#    src_movie = VideoFileClip(src_file_path, audio=False).subclip(36,43)
     dst_movie = src_movie.fl_image(process_image)
     dst_movie.write_videofile(dst_file_path)
 
@@ -666,6 +758,12 @@ def test_thresholds(image):
     
     hls_binary = hls_thresh(image, thresh=hls_thresh_value)
     plot_side_by_side(image, hls_binary, 'HLS Threshold (S channel)', gray=True)
+
+    yellow_binary = select_yellow(image)
+    plot_side_by_side(image, yellow_binary, 'Select Yellow', gray=True)
+
+    white_binary = select_white(image)
+    plot_side_by_side(image, white_binary, 'Select White', gray=True)
 
 def test_combined_thresholds():
 
@@ -738,7 +836,8 @@ def test_find_lanes():
     #print('Test the pipeline with test images')
     files = glob.glob(folder_test_images+'*.jpg')
     
-    fig, axs = plt.subplots(len(files), 4, figsize=def_figsize)
+    fig, axs = plt.subplots(len(files), 3, figsize=def_figsize)
+#    fig, axs = plt.subplots(len(files), 3, figsize=def_figsize)
     fig.subplots_adjust(hspace = 0.3, wspace=0.001)
     axs = axs.ravel() 
     i = 0
@@ -753,7 +852,7 @@ def test_find_lanes():
 
         combined_binary = pipeline(img)
         processed = transform_perspective(combined_binary)
-        rgb, left_fit, right_fit = sliding_window(processed, plot=False)
+        rgb, left_fit, right_fit, found = sliding_window(processed, plot=False)
         title = 'Sliding Window-' + os.path.splitext(base)[0]
         save_image(title, rgb, gray=False)    
         # plot
@@ -761,13 +860,13 @@ def test_find_lanes():
         axs[i].set_title(title)
         i += 1
         
-        rgb, left_fit, right_fit = find_lines(processed, left_fit, right_fit, plot=False)
-        title = 'Find Lanes with Prev-' + os.path.splitext(base)[0]
-        save_image(title, rgb, gray=False)    
-        # plot
-        axs[i].imshow(rgb)
-        axs[i].set_title(title)
-        i += 1
+#        rgb, left_fit, right_fit = find_lines(processed, left_fit, right_fit, plot=False)
+#        title = 'Find Lanes with Prev-' + os.path.splitext(base)[0]
+#        save_image(title, rgb, gray=False)    
+#        # plot
+#        axs[i].imshow(rgb)
+#        axs[i].set_title(title)
+#        i += 1
         
         left_curv, right_curv, dist_center = get_curvature(processed, left_fit, right_fit)
         img_lanes = draw_lanes(img, processed, left_fit, right_fit)
@@ -798,7 +897,10 @@ def main():
     ##########################################################################
     # calibrate camera
     #print('Calibrate camera')
+    img = cv2.imread(cal_test_img_path)
+    img_size = (img.shape[1], img.shape[0])
     g_mtx, g_dist = calibrate_camera(nx, ny, img_size, cal_img_path, cal_path, True)
+    #g_mtx, g_dist = calibrate_camera(nx, ny, img_size, cal_img_path, cal_path, False)
     
     ##########################################################################
     # undistort image - test with chessboard
@@ -815,19 +917,15 @@ def main():
     org, undist = undistort_image(cal_test_img_path, cal_path)
     # visualize undistortion
     plot_side_by_side(org, undist, test_image_name+' Undistorted')
-    
-    # simply change the name for later uses
-    image = undist
-    
-    ###########################################################################
-    # 
-    test_thresholds(image)
-    
-    ###########################################################################
-    # combined threshold
-    combined_binary = pipeline(image)
-    plot_side_by_side(image, combined_binary, test_image_name+' Combined Thresholds', gray=True)
+    # test all threshold
+    test_thresholds(undist)
+    # test combined threshold
+    combined_binary = pipeline(undist)
+    plot_side_by_side(undist, combined_binary, test_image_name+' Combined Thresholds', gray=True)
 
+
+    ###########################################################################
+    # TEST WITH TEST IMAGES
     ###########################################################################
     # 
     test_combined_thresholds()
