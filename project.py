@@ -234,20 +234,20 @@ def hls_thresh(img, thresh=(0, 255)):
     return binary_output
 
 def select_yellow(image):
-	#hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-	hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-	lower = np.array([20,100,100]) #[20,60,60])
-	upper = np.array([30,255,255]) #38,174, 250])
-	binary_output = cv2.inRange(hsv, lower, upper)
-
-	return binary_output
+    #hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    lower = np.array([20,100,100]) #[20,60,60])
+    upper = np.array([30,255,255]) #38,174, 250])
+    binary_output = cv2.inRange(hsv, lower, upper)
+    
+    return binary_output
 
 def select_white(image):
-	lower = np.array([202,202,202])
-	upper = np.array([255,255,255])
-	binary_output = cv2.inRange(image, lower, upper)
-
-	return binary_output    
+    lower = np.array([202,202,202])
+    upper = np.array([255,255,255])
+    binary_output = cv2.inRange(image, lower, upper)
+    
+    return binary_output    
 
 ##############################################################################
 # PIPELINE
